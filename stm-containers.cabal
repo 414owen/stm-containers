@@ -88,6 +88,7 @@ library
 test-suite test
   type:               exitcode-stdio-1.0
   hs-source-dirs:     test
+  ghc-options:        -threaded
   default-extensions:
     NoImplicitPrelude
     NoMonomorphismRestriction
@@ -136,6 +137,7 @@ test-suite test
     Suites.Map.Update
 
   build-depends:
+    , async >= 2
     , deferred-folds
     , focus
     , foldl >=1.4 && <2

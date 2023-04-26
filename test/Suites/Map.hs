@@ -1,10 +1,14 @@
+{-# LANGUAGE NumericUnderscores #-}
+
 module Suites.Map (tests) where
 
+import Control.Concurrent.Async as Async
 import qualified Control.Foldl as Foldl
 import Control.Monad.Free
 import qualified Data.HashMap.Strict as HashMap
 import qualified DeferredFolds.UnfoldlM as UnfoldlM
 import qualified Focus
+import qualified ListT as LT
 import qualified StmContainers.Map as StmMap
 import qualified Suites.Map.Update as Update
 import Test.QuickCheck.Instances ()
@@ -151,5 +155,38 @@ tests =
         atomically $ do
           m <- stmMapFromList [('a', ())]
           StmMap.delete 'a' m
-          StmMap.null m
+          StmMap.null m,
+    testCase "converting to list doesn't starve" testForStarvation
   ]
+
+testForStarvation :: IO ()
+testForStarvation = do
+  m <- atomically $ stmMapFromList kvs
+  go m
+  where
+    maxKey :: Int
+    maxKey = 1_000
+
+    nWriterThreads :: Int
+    nWriterThreads = 10
+
+    kvs :: [(Int, Int)]
+    kvs = zip [1..maxKey] $ repeat 42
+
+    go :: StmMap.Map Int Int -> IO ()
+    go m = do
+      res <- timeout 1_000_000 $ race updateContinuouslyThreaded getTraversal
+      assertEqual "Got a traversal" (Just $ Right ()) $ fmap ($> ()) res
+
+      where
+        updateContinuouslyThreaded :: IO ()
+        updateContinuouslyThreaded =
+          forConcurrently_ [1..nWriterThreads] updateContinuously
+
+        updateContinuously :: Int -> IO ()
+        updateContinuously n = forM_ [n..] $ \v -> do
+          forM_ [1..maxKey] $ \k -> do
+            atomically $ StmMap.insert v k m
+
+        getTraversal :: IO [(Int, Int)]
+        getTraversal = atomically $ stmMapToList m
